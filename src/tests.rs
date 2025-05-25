@@ -8,7 +8,7 @@ mod tests {
     #[test]
     fn test_running_executable() {
         let mut cmd = Command::cargo_bin("toy-payments-engine").unwrap();
-        cmd.arg("test.csv");
+        cmd.arg("transactions.csv");
         cmd.assert().success();
         let output = String::from_utf8(cmd.output().unwrap().stdout).unwrap();
         assert_eq!(output.lines().count(), 3);
