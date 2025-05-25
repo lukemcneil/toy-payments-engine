@@ -23,7 +23,7 @@ struct Transaction {
     transaction_type: TransactionType,
     client: ClientID,
     tx: TxID,
-    amount: Decimal,
+    amount: Option<Decimal>,
 }
 
 #[derive(Debug)]
@@ -55,13 +55,14 @@ impl Clients {
         }
         match tx.transaction_type {
             TransactionType::Deposit => {
+                let amount = tx.amount.unwrap_or_default();
                 let deposit_info = DepositInfo {
-                    amount: tx.amount,
+                    amount: amount,
                     disputed: false,
                 };
                 match maybe_client {
                     Some(client_info) => {
-                        client_info.available += tx.amount;
+                        client_info.available += amount;
                         client_info.deposits.insert(tx.tx, deposit_info);
                     }
                     None => {
@@ -70,7 +71,7 @@ impl Clients {
                         self.client_data.insert(
                             tx.client,
                             ClientInfo {
-                                available: tx.amount,
+                                available: amount,
                                 held: Decimal::ZERO,
                                 locked: false,
                                 deposits,
@@ -81,14 +82,45 @@ impl Clients {
             }
             TransactionType::Withdrawal => {
                 if let Some(client_info) = maybe_client {
-                    if client_info.available >= tx.amount {
-                        client_info.available -= tx.amount;
+                    let amount = tx.amount.unwrap_or_default();
+                    if client_info.available >= amount {
+                        client_info.available -= amount;
                     }
                 }
             }
-            TransactionType::Dispute => todo!(),
-            TransactionType::Resolve => todo!(),
-            TransactionType::Chargeback => todo!(),
+            TransactionType::Dispute => {
+                if let Some(client_info) = maybe_client {
+                    if let Some(deposit_info) = client_info.deposits.get_mut(&tx.tx) {
+                        if !deposit_info.disputed {
+                            client_info.held += deposit_info.amount;
+                            client_info.available -= deposit_info.amount;
+                            deposit_info.disputed = true;
+                        }
+                    }
+                }
+            }
+            TransactionType::Resolve => {
+                if let Some(client_info) = maybe_client {
+                    if let Some(deposit_info) = client_info.deposits.get_mut(&tx.tx) {
+                        if deposit_info.disputed {
+                            client_info.held -= deposit_info.amount;
+                            client_info.available += deposit_info.amount;
+                            deposit_info.disputed = false;
+                        }
+                    }
+                }
+            }
+            TransactionType::Chargeback => {
+                if let Some(client_info) = maybe_client {
+                    if let Some(deposit_info) = client_info.deposits.get_mut(&tx.tx) {
+                        if deposit_info.disputed {
+                            client_info.held -= deposit_info.amount;
+                            deposit_info.disputed = false;
+                            client_info.locked = true;
+                        }
+                    }
+                }
+            }
         };
         Ok(())
     }
