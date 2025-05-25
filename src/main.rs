@@ -2,6 +2,7 @@ use std::{collections::HashMap, env, fs::File};
 
 use anyhow::Error;
 use csv::{ReaderBuilder, Trim};
+use rust_decimal::Decimal;
 
 type ClientID = u16;
 type TxID = u32;
@@ -22,19 +23,19 @@ struct Transaction {
     transaction_type: TransactionType,
     client: ClientID,
     tx: TxID,
-    amount: f32,
+    amount: Decimal,
 }
 
 #[derive(Debug)]
 struct DepositInfo {
-    amount: f32,
+    amount: Decimal,
     disputed: bool,
 }
 
 #[derive(Debug)]
 struct ClientInfo {
-    available: f32,
-    held: f32,
+    available: Decimal,
+    held: Decimal,
     locked: bool,
     deposits: HashMap<TxID, DepositInfo>,
 }
@@ -46,39 +47,45 @@ struct Clients {
 
 impl Clients {
     fn process_transaction(&mut self, tx: Transaction) -> Result<(), Error> {
+        let maybe_client = self.client_data.get_mut(&tx.client);
+        if let Some(client_info) = &maybe_client {
+            if client_info.locked {
+                return Ok(());
+            }
+        }
         match tx.transaction_type {
-            TransactionType::Deposit => match self.client_data.get_mut(&tx.client) {
-                Some(client_info) => {
-                    client_info.available += tx.amount;
-                    client_info.deposits.insert(
-                        tx.tx,
-                        DepositInfo {
-                            amount: tx.amount,
-                            disputed: false,
-                        },
-                    );
+            TransactionType::Deposit => {
+                let deposit_info = DepositInfo {
+                    amount: tx.amount,
+                    disputed: false,
+                };
+                match maybe_client {
+                    Some(client_info) => {
+                        client_info.available += tx.amount;
+                        client_info.deposits.insert(tx.tx, deposit_info);
+                    }
+                    None => {
+                        let mut deposits = HashMap::new();
+                        deposits.insert(tx.tx, deposit_info);
+                        self.client_data.insert(
+                            tx.client,
+                            ClientInfo {
+                                available: tx.amount,
+                                held: Decimal::ZERO,
+                                locked: false,
+                                deposits,
+                            },
+                        );
+                    }
                 }
-                None => {
-                    let mut deposits = HashMap::new();
-                    deposits.insert(
-                        tx.tx,
-                        DepositInfo {
-                            amount: tx.amount,
-                            disputed: false,
-                        },
-                    );
-                    self.client_data.insert(
-                        tx.client,
-                        ClientInfo {
-                            available: tx.amount,
-                            held: 0.0,
-                            locked: false,
-                            deposits,
-                        },
-                    );
+            }
+            TransactionType::Withdrawal => {
+                if let Some(client_info) = maybe_client {
+                    if client_info.available >= tx.amount {
+                        client_info.available -= tx.amount;
+                    }
                 }
-            },
-            TransactionType::Withdrawal => (),
+            }
             TransactionType::Dispute => todo!(),
             TransactionType::Resolve => todo!(),
             TransactionType::Chargeback => todo!(),
