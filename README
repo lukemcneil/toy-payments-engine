@@ -1,0 +1,18 @@
+This is a toy payments engine written in Rust. It handles deposits, withdrawals, disputes, resolved, and chargebacks.
+
+Crates used
+  - serde to do csv serialization and deserialization
+  - csv for reading and writing csv's
+  - rust_decimal for a safe way to store amounts (rather than floats with have rounding issues)
+  - anyhow to make error handling a lot easier
+  - assert_cmd to write an integration test to actually call the executable
+
+To run the test do
+```
+cargo run -- transactions.csv > accounts.csv
+```
+and see the results in accounts.csv.
+
+Some tests can be found in tests.rs.
+
+By default, if a transaction cannot be executed for any reason it will silently fail and have no effect. A println can be commented out in the code to see these errors.

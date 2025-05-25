@@ -194,12 +194,14 @@ fn main() {
 }
 
 fn process_transactions(input_filename: &str) -> Result<(), Error> {
-    let transactions = get_transactions_from_csv(input_filename)?;
     let mut clients = Clients {
         client_data: HashMap::new(),
     };
-    for tx in &transactions {
-        if let Err(_e) = clients.process_transaction(tx) {
+    let file = File::open(input_filename)?;
+    let mut rdr = ReaderBuilder::new().trim(Trim::All).from_reader(file);
+    for tx in rdr.deserialize::<Transaction>() {
+        let tx = tx?;
+        if let Err(_e) = clients.process_transaction(&tx) {
             // silently ignore errors in processing transactions for now
             // println!("Error occurred running transaction {:?}: {}", tx, _e);
         }
@@ -217,11 +219,4 @@ fn print_client_info(clients: &Clients) -> Result<(), Error> {
     }
     wtr.flush()?;
     Ok(())
-}
-
-fn get_transactions_from_csv(filename: &str) -> Result<Vec<Transaction>, Error> {
-    let file = File::open(filename)?;
-    let mut rdr = ReaderBuilder::new().trim(Trim::All).from_reader(file);
-
-    Ok(rdr.deserialize().collect::<Result<Vec<Transaction>, _>>()?)
 }
