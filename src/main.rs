@@ -1,6 +1,6 @@
 use std::{collections::HashMap, env, fs::File};
 
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use csv::{ReaderBuilder, Trim};
 use rust_decimal::Decimal;
 
@@ -46,16 +46,21 @@ struct Clients {
 }
 
 impl Clients {
-    fn process_transaction(&mut self, tx: Transaction) -> Result<(), Error> {
+    fn process_transaction(&mut self, tx: &Transaction) -> Result<(), Error> {
         let maybe_client = self.client_data.get_mut(&tx.client);
         if let Some(client_info) = &maybe_client {
             if client_info.locked {
-                return Ok(());
+                return Err(anyhow!(
+                    "Cannot execute transaction because client is locked"
+                ));
             }
         }
         match tx.transaction_type {
             TransactionType::Deposit => {
-                let amount = tx.amount.unwrap_or_default();
+                let amount = match tx.amount {
+                    Some(amount) => amount,
+                    None => return Err(anyhow!("Need to include an amount with deposit")),
+                };
                 let deposit_info = DepositInfo {
                     amount: amount,
                     disputed: false,
@@ -82,10 +87,17 @@ impl Clients {
             }
             TransactionType::Withdrawal => {
                 if let Some(client_info) = maybe_client {
-                    let amount = tx.amount.unwrap_or_default();
+                    let amount = match tx.amount {
+                        Some(amount) => amount,
+                        None => return Err(anyhow!("Need to include an amount with deposit")),
+                    };
                     if client_info.available >= amount {
                         client_info.available -= amount;
+                    } else {
+                        return Err(anyhow!("Cannot withdraw more than available in account"));
                     }
+                } else {
+                    return Err(anyhow!("Client does not exist"));
                 }
             }
             TransactionType::Dispute => {
@@ -95,8 +107,14 @@ impl Clients {
                             client_info.held += deposit_info.amount;
                             client_info.available -= deposit_info.amount;
                             deposit_info.disputed = true;
+                        } else {
+                            return Err(anyhow!("Deposit is already being disputed"));
                         }
+                    } else {
+                        return Err(anyhow!("Deposit transaction does not exist"));
                     }
+                } else {
+                    return Err(anyhow!("Client does not exist"));
                 }
             }
             TransactionType::Resolve => {
@@ -106,8 +124,14 @@ impl Clients {
                             client_info.held -= deposit_info.amount;
                             client_info.available += deposit_info.amount;
                             deposit_info.disputed = false;
+                        } else {
+                            return Err(anyhow!("Deposit is not being disputed"));
                         }
+                    } else {
+                        return Err(anyhow!("Deposit transaction does not exist"));
                     }
+                } else {
+                    return Err(anyhow!("Client does not exist"));
                 }
             }
             TransactionType::Chargeback => {
@@ -117,8 +141,14 @@ impl Clients {
                             client_info.held -= deposit_info.amount;
                             deposit_info.disputed = false;
                             client_info.locked = true;
+                        } else {
+                            return Err(anyhow!("Deposit is not being disputed"));
                         }
+                    } else {
+                        return Err(anyhow!("Deposit transaction does not exist"));
                     }
+                } else {
+                    return Err(anyhow!("Client does not exist"));
                 }
             }
         };
@@ -145,8 +175,11 @@ fn process_transactions(input_filename: &str) -> Result<(), Error> {
     let mut clients = Clients {
         client_data: HashMap::new(),
     };
-    for tx in transactions {
-        clients.process_transaction(tx)?
+    for tx in &transactions {
+        if let Err(_e) = clients.process_transaction(tx) {
+            // silently ignore errors in processing transactions for now
+            // println!("Error occurred running transaction {:?}: {}", tx, _e);
+        }
     }
     println!("{:#?}", clients);
     Ok(())
