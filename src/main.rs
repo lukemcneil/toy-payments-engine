@@ -39,6 +39,8 @@ struct ClientInfo {
     available: Decimal,
     held: Decimal,
     locked: bool,
+    // by only storing past deposits, we are assuming that deposits are the only transactions that can be disputed,
+    // this is the only thing that makes sense
     deposits: HashMap<TxID, DepositInfo>,
 }
 
@@ -72,6 +74,7 @@ impl Clients {
     fn process_transaction(&mut self, tx: &Transaction) -> Result<(), Error> {
         let maybe_client = self.client_data.get_mut(&tx.client);
         if let Some(client_info) = &maybe_client {
+            // as soon as a client is locked, no more transactions will have any effect
             if client_info.locked {
                 return Err(anyhow!(
                     "Cannot execute transaction because client is locked"
@@ -127,6 +130,9 @@ impl Clients {
                 if let Some(client_info) = maybe_client {
                     if let Some(deposit_info) = client_info.deposits.get_mut(&tx.tx) {
                         if !deposit_info.disputed {
+                            // it is entirely possible that disputing a deposit makes the available balance go negative,
+                            // this is possible if after a deposit, the client withdraws it all, then the original deposit is disputed.
+                            // Another option could have been to fail the dispute if it would make the available negative.
                             client_info.held += deposit_info.amount;
                             client_info.available -= deposit_info.amount;
                             deposit_info.disputed = true;
@@ -181,6 +187,7 @@ impl Clients {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    // force exactly 1 argument
     match args.len() {
         0 | 1 => panic!("please include an input file name"),
         2 => (),
