@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs::File};
+use std::{collections::HashMap, env, fs::File, io};
 
 use anyhow::{anyhow, Error};
 use csv::{ReaderBuilder, Trim};
@@ -38,6 +38,27 @@ struct ClientInfo {
     held: Decimal,
     locked: bool,
     deposits: HashMap<TxID, DepositInfo>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ClientOutput {
+    client: ClientID,
+    available: Decimal,
+    held: Decimal,
+    total: Decimal,
+    locked: bool,
+}
+
+impl ClientOutput {
+    fn new(client_id: ClientID, client_info: &ClientInfo) -> Self {
+        Self {
+            client: client_id,
+            available: client_info.available,
+            held: client_info.held,
+            total: client_info.available + client_info.held,
+            locked: client_info.locked,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -181,7 +202,18 @@ fn process_transactions(input_filename: &str) -> Result<(), Error> {
             // println!("Error occurred running transaction {:?}: {}", tx, _e);
         }
     }
-    println!("{:#?}", clients);
+    // println!("{:#?}", clients);
+    print_client_info(&clients)?;
+    Ok(())
+}
+
+fn print_client_info(clients: &Clients) -> Result<(), Error> {
+    let mut wtr = csv::Writer::from_writer(io::stdout());
+    for (client_id, client_info) in &clients.client_data {
+        let client_output = ClientOutput::new(*client_id, client_info);
+        wtr.serialize(client_output)?;
+    }
+    wtr.flush()?;
     Ok(())
 }
 
