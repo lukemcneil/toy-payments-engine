@@ -7,6 +7,8 @@ use rust_decimal::Decimal;
 type ClientID = u16;
 type TxID = u32;
 
+mod tests;
+
 #[derive(Debug, serde::Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 enum TransactionType {
@@ -83,7 +85,7 @@ impl Clients {
                     None => return Err(anyhow!("Need to include an amount with deposit")),
                 };
                 let deposit_info = DepositInfo {
-                    amount: amount,
+                    amount,
                     disputed: false,
                 };
                 match maybe_client {
